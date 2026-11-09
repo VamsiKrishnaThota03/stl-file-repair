@@ -2,33 +2,37 @@
 
 A small Python tool that finds holes (open edges) in an STL mesh, visualises them in 3D, patches them with new faces and exports the result.
 
-![Python](https://img.shields.io/badge/Python-3.7%2B-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)
 ![trimesh](https://img.shields.io/badge/trimesh-mesh%20processing-informational)
 ![Matplotlib](https://img.shields.io/badge/Matplotlib-3D%20plots-11557c)
 
 ## Overview
 
-STL files exported from CAD tools or scanners are often not watertight: some triangle edges belong to only one face, leaving gaps in the surface. This project loads an STL file with [`trimesh`](https://trimesh.org/), detects those open edges, highlights them in a Matplotlib 3D view, adds faces to close the gaps, re-orients normals and saves a repaired copy.
+STL files exported from CAD tools or scanners are often not watertight: some triangle edges belong to only one face, leaving gaps in the surface. This project loads an STL file with [`trimesh`](https://trimesh.org/), detects those open edges, highlights them in a Matplotlib 3D view, closes each hole with a triangle fan, re-orients normals and saves a repaired copy.
+
+| Before | After |
+|---|---|
+| ![Cube with a missing side, open edges in red](docs/screenshots/before.png) | ![Repaired, watertight cube](docs/screenshots/after.png) |
 
 A helper script is included to generate a valid test cube and a deliberately corrupted copy of it.
 
 ## Features
 
-- **File picker**: choose the input `.stl` through a Tkinter file dialog
+- **Command line or file picker**: pass the `.stl` path as an argument, or run without one to choose it in a Tkinter dialog
 - **Open-edge detection**: counts how many faces use each edge; edges used exactly once are reported as open
-- **3D visualisation**: Matplotlib view with open edges drawn in red and faces adjacent to them shaded yellow (the window closes on its own after about 15 seconds)
-- **Hole filling**: for every open edge, new triangles are added that connect the edge to the other mesh vertices, then `trimesh`'s `fix_normals()` is applied
-- **Before/after views**: shows the corrupted mesh, then the repaired mesh
-- **Export**: writes the repaired mesh to `repaired_cube.stl`
-- **Test data generator**: `generate_corrupt.py` writes a unit cube (`valid_cube.stl`) and a copy with about 1% of its bytes randomised (`corrupted_cube.stl`)
-
-> **Note:** the hole-filling strategy is a simple brute-force approach. It closes open edges, but on larger meshes it can add many extra (and overlapping) faces. It is meant for experimenting on small models, not as a production mesh-repair pipeline.
+- **Hole detection**: open edges are chained into boundary loops, following the winding of the faces around them
+- **Hole filling**: each loop is closed with a fan of triangles around a new vertex at the loop's centre (a triangular hole gets a single face), with winding that matches the rest of the mesh. `trimesh`'s `fix_normals()` is then applied.
+- **3D visualisation**: Matplotlib views of the mesh before and after repair, with open edges in red and the faces next to them in yellow. Close the window to continue, use `--no-view` to skip it, or `--plot-dir` to save the views as PNG files.
+- **Export**: writes the repaired mesh (default `repaired_cube.stl`, change with `-o`)
+- **Test data generator**: `generate_corrupt.py` writes a unit cube (`valid_cube.stl`) and a copy with one to three sides removed (`corrupted_cube.stl`), or with random bytes changed (`--random-bytes`)
+- **Tests** for detection, filling and the CLI (`test_repair.py`)
 
 ## Tech stack
 
-- Python 3.7+
+- Python 3.9+
 - [trimesh](https://github.com/mikedh/trimesh): mesh loading, normal fixing and export
 - NumPy: face array manipulation
+- SciPy: needed by `trimesh` for `fix_normals()`
 - Matplotlib (`mplot3d`): 3D visualisation
 - Tkinter: file selection dialog (ships with most Python installs)
 
@@ -37,19 +41,20 @@ A helper script is included to generate a valid test cube and a deliberately cor
 ```
 stl-file-repair/
 ├── repair_stl.py            # Main tool: detect, visualise, repair and export
-├── generate_corrupt.py      # Builds a valid cube STL and a byte-corrupted copy
+├── generate_corrupt.py      # Builds a valid cube STL and a copy with holes
+├── test_repair.py           # unittest suite
+├── requirements.txt
 ├── valid_cube.stl           # Sample: watertight unit cube
-├── corrupted_stl_file.stl   # Sample: ASCII cube with a missing face ("cube_with_hole")
-├── repaired.stl             # Sample output
-└── repaired_cube.stl        # Sample output (default output file name)
+├── corrupted_stl_file.stl   # Sample: small ASCII mesh with open edges ("cube_with_hole")
+└── docs/screenshots/        # Before/after plots used in this README
 ```
 
 ## Getting started
 
 ### Prerequisites
 
-- Python 3.7 or later
-- A desktop environment (the tool opens a file dialog and plot windows)
+- Python 3.9 or later
+- A desktop environment only if you want the file dialog or interactive plot windows (`--no-view` works headless)
 
 ### Install
 
@@ -59,29 +64,39 @@ cd stl-file-repair
 
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install trimesh numpy matplotlib
+pip install -r requirements.txt
 ```
 
 ### Run
 
 ```bash
-python repair_stl.py
+python repair_stl.py corrupted_stl_file.stl                 # shows before/after plots, writes repaired_cube.stl
+python repair_stl.py corrupted_stl_file.stl -o fixed.stl --no-view
+python repair_stl.py my_part.stl --no-view --plot-dir plots  # save before.png / after.png instead
+python repair_stl.py                                        # pick a file in a dialog
 ```
 
-1. Pick an STL file in the dialog (for example `corrupted_stl_file.stl`).
-2. The terminal prints the number of open edges found.
-3. If the mesh has holes, a "Corrupted Mesh" view opens with the open edges highlighted.
-4. The mesh is repaired and a "Repaired Mesh" view opens.
-5. The result is saved as `repaired_cube.stl` in the current directory. Change `output_file_path` in `repair_stl.py` to use another name.
-
-If the mesh is already watertight, the tool says so and exits without writing a file.
+The terminal reports the number of open edges, how many holes were closed and whether the result is watertight. If the mesh is already watertight, the tool says so and exits without writing a file. The exit code is non-zero if the file can't be loaded or saved.
 
 ### Generate test files
 
 ```bash
-python generate_corrupt.py
-# -> valid_cube.stl and corrupted_cube.stl
+python generate_corrupt.py                    # valid_cube.stl + corrupted_cube.stl (one side missing)
+python generate_corrupt.py --holes 3          # three adjacent sides missing
+python generate_corrupt.py --random-bytes 0.01 --seed 1   # random byte damage instead
 ```
+
+### Tests
+
+```bash
+python -m unittest -v
+```
+
+## Known limitations
+
+- Each hole is filled with a flat-ish fan around its centre. That is exact for planar holes (like a missing cube side) but only approximate for large or strongly curved holes, which come out as a "tent".
+- Damage that produces non-manifold edges (an edge shared by three or more faces) or self-intersections isn't fixed; random byte corruption often leaves a few open edges for that reason.
+- The Matplotlib viewer is meant for small meshes; very large models will be slow to draw.
 
 ## Contact
 
