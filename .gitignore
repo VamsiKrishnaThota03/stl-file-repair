@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+
+# Outputs of repair_stl.py / generate_corrupt.py
+repaired*.stl
+corrupted_cube.stl
+plots/
