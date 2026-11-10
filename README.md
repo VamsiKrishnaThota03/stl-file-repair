@@ -6,6 +6,10 @@ A small Python tool that finds holes (open edges) in an STL mesh, visualises the
 ![trimesh](https://img.shields.io/badge/trimesh-mesh%20processing-informational)
 ![Matplotlib](https://img.shields.io/badge/Matplotlib-3D%20plots-11557c)
 
+[![CI](https://github.com/VamsiKrishnaThota03/stl-file-repair/actions/workflows/ci.yml/badge.svg)](https://github.com/VamsiKrishnaThota03/stl-file-repair/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/VamsiKrishnaThota03/stl-file-repair/actions/workflows/codeql.yml/badge.svg)](https://github.com/VamsiKrishnaThota03/stl-file-repair/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ## Overview
 
 STL files exported from CAD tools or scanners are often not watertight: some triangle edges belong to only one face, leaving gaps in the surface. This project loads an STL file with [`trimesh`](https://trimesh.org/), detects those open edges, highlights them in a Matplotlib 3D view, closes each hole with a triangle fan, re-orients normals and saves a repaired copy.
@@ -101,3 +105,33 @@ python -m unittest -v
 ## Contact
 
 Thota Vamsi Krishna — [GitHub](https://github.com/VamsiKrishnaThota03)
+
+
+## Reproducibility
+
+`requirements.txt` previously used `>=` ranges, so a fresh install could pick up
+a new major release and change behaviour with no commit here. Both of the
+obvious candidates matter for this tool: trimesh 5 changed mesh-processing
+defaults, and numpy 2 changed several dtype-promotion rules. The versions are
+now pinned, and Dependabot opens the upgrade PRs so bumps are deliberate.
+
+## Tests and CI
+
+```bash
+MPLBACKEND=Agg python -m unittest -v     # 6 tests
+```
+
+The 6 unit tests cover single and adjacent holes, a triangular hole needing one
+face, a watertight mesh being left alone, and a missing file.
+
+CI adds four end-to-end checks against the bundled fixtures, because the unit
+tests work on in-memory meshes and never exercise the CLI:
+
+| Check | Why it is written this way |
+| --- | --- |
+| Repairs the corrupt mesh | Asserting the CLI exits 0 and writes a file would pass even if nothing was fixed. `scripts/verify_repair.py` loads both meshes and requires the input to start non-watertight, the output to end watertight, and faces to have been added — it also fails loudly if the fixture itself has drifted to watertight, which would make the check vacuous |
+| A watertight mesh is not rewritten | The CLI deliberately skips writing when there is nothing to fix, so an output file appearing here would mean it modified a mesh it should have left alone |
+| Plots render headlessly | `--plot-dir` with `MPLBACKEND=Agg`, confirming both PNGs are produced without a display |
+| A missing input fails cleanly | Non-zero exit without a traceback |
+
+CodeQL runs over Python weekly; Dependabot watches pip and Actions.

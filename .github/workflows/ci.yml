@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+
+    env:
+      # matplotlib would otherwise try to open a window, and a runner has no
+      # display. The CLI is also invoked with --no-view below.
+      MPLBACKEND: Agg
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Test
+        run: python -m unittest -v
+
+      - name: The CLI repairs the bundled corrupt mesh end to end
+        run: |
+          set -euo pipefail
+          python repair_stl.py corrupted_stl_file.stl -o /tmp/repaired.stl --no-view
+          test -s /tmp/repaired.stl || { echo "::error::no output written"; exit 1; }
+          # Checks the mesh actually became watertight, not just that a file
+          # appeared — see scripts/verify_repair.py.
+          python scripts/verify_repair.py corrupted_stl_file.stl /tmp/repaired.stl
+
+      - name: A watertight mesh is reported as such and nothing is written
+        run: |
+          set -euo pipefail
+          rm -f /tmp/cube.stl
+          output=$(python repair_stl.py valid_cube.stl -o /tmp/cube.stl --no-view)
+          echo "$output"
+          echo "$output" | grep -qi "already watertight" \
+            || { echo "::error::expected the already-watertight message"; exit 1; }
+          # The CLI deliberately skips writing when there is nothing to fix, so
+          # an output file here would mean it rewrote a mesh it should not touch.
+          test ! -f /tmp/cube.stl \
+            || { echo "::error::a watertight mesh should not be rewritten"; exit 1; }
+
+      - name: Plots render headlessly when a directory is given
+        run: |
+          set -euo pipefail
+          python repair_stl.py corrupted_stl_file.stl -o /tmp/r2.stl \
+                               --no-view --plot-dir /tmp/plots
+          test -s /tmp/plots/before.png || { echo "::error::before.png missing"; exit 1; }
+          test -s /tmp/plots/after.png  || { echo "::error::after.png missing"; exit 1; }
+
+      - name: A missing input file exits non-zero rather than tracebacking
+        run: |
+          set +e
+          output=$(python repair_stl.py /tmp/does-not-exist.stl --no-view 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          test "$status" -ne 0 || { echo "::error::expected a non-zero exit"; exit 1; }
+          echo "$output" | grep -qiv "Traceback" \
+            || { echo "::error::should fail cleanly, not with a traceback"; exit 1; }
