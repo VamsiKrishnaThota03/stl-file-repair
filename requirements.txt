@@ -8,6 +8,6 @@
 # used: dropping 3.11 support to chase a minor version is a worse trade than
 # staying one release back. Bump deliberately; Dependabot opens the PRs.
 trimesh==5.2.0
-numpy==2.4.6
+numpy==2.5.4
 matplotlib==3.11.2
-scipy==1.17.1
+scipy==1.18.1
